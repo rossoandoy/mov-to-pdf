@@ -56,4 +56,6 @@ npm run pdf
 # または図も再生成: npm run build
 ```
 
+複数マニュアルがある場合は **`operation_manual.pdf` を上書きしない**よう、`node build-pdf.mjs 別件.md 別件.pdf` のように **出力ファイル名を変える**（プロジェクトの `package.json` に用途別 `pdf:*` / `build:*` を足すのが安全）。
+
 Chrome が見つからない場合は環境変数 `CHROME_PATH` に実行ファイルのフルパスを設定する。

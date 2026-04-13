@@ -1,17 +1,15 @@
 /**
- * Markdown + ./images を A4 PDF に出力する（Google Chrome / Chromium 必須）
- *
- * 配置: 作業ディレクトリ直下に置き、同じ階層に operation_manual.md（または環境変数で指定）がある想定。
+ * Markdown + ./images（相対パス）を A4 PDF に出力する（Google Chrome / Chromium 必須）
  *
  * Usage:
  *   npm install && npm run pdf
+ *     → 既定: operation_manual.md → operation_manual.pdf
  *
- * 環境変数（任意）:
- *   MANUAL_MD  入力 Markdown ファイル名（既定: operation_manual.md）
- *   MANUAL_PDF 出力 PDF ファイル名（既定: operation_manual.pdf）
+ *   node build-pdf.mjs <入力.md> <出力.pdf>
+ *     → 別マニュアル用。既存の operation_manual.pdf を上書きしない。
  */
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { marked } from "marked";
 import puppeteer from "puppeteer-core";
@@ -19,8 +17,20 @@ import puppeteer from "puppeteer-core";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const manualDir = __dirname;
 
-const mdName = process.env.MANUAL_MD || "operation_manual.md";
-const pdfName = process.env.MANUAL_PDF || "operation_manual.pdf";
+const args = process.argv.slice(2);
+const mdFile = args[0] ?? "operation_manual.md";
+const pdfFile = args[1] ?? "operation_manual.pdf";
+
+const mdPath = join(manualDir, mdFile);
+const pdfPath = join(manualDir, pdfFile);
+
+if (!existsSync(mdPath)) {
+  console.error("入力 Markdown が見つかりません:", mdPath);
+  process.exit(1);
+}
+
+const safeHtmlStem = basename(mdFile, ".md").replace(/[^a-zA-Z0-9._-]/g, "_") || "manual";
+const htmlPath = join(manualDir, `_pdf_temp_${safeHtmlStem}.html`);
 
 const chromeCandidates = [
   process.env.CHROME_PATH,
@@ -43,13 +53,10 @@ function findChrome() {
 
 const chromePath = findChrome();
 if (!chromePath) {
-  console.error(
-    "Chrome / Chromium が見つかりません。CHROME_PATH を設定するか、build-pdf.mjs の chromeCandidates にパスを追加してください。"
-  );
+  console.error("Google Chrome が見つかりません。CHROME_PATH を設定するか、Chrome をインストールしてください。");
   process.exit(1);
 }
 
-const mdPath = join(manualDir, mdName);
 const md = readFileSync(mdPath, "utf8");
 const bodyHtml = await marked.parse(md, { async: true });
 
@@ -90,7 +97,6 @@ ${bodyHtml}
 </body>
 </html>`;
 
-const htmlPath = join(manualDir, "_pdf_temp.html");
 writeFileSync(htmlPath, html, "utf8");
 
 const browser = await puppeteer.launch({
@@ -102,7 +108,6 @@ const browser = await puppeteer.launch({
 const page = await browser.newPage();
 await page.goto(pathToFileURL(htmlPath).href, { waitUntil: "networkidle0" });
 
-const pdfPath = join(manualDir, pdfName);
 await page.pdf({
   path: pdfPath,
   format: "A4",

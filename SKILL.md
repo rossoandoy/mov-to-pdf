@@ -89,8 +89,10 @@ description: >-
 ## Step E — PDF 出力
 
 1. 作業ディレクトリに `package.json`・`build-pdf.mjs` を置く（このスキルの `templates/` をコピー）。
-2. `npm install` のあと `npm run build`（`diagram` → `pdf`）または `npm run pdf` のみ。
-3. 成果物 **`operation_manual.pdf`** を確認する。
+2. `npm install` のあと、用途に応じてビルドする。
+   - **既定（1 本だけのマニュアル）**: `npm run build`（`diagram` → `pdf`）または `npm run pdf` のみ → `operation_manual.md` → **`operation_manual.pdf`**。
+   - **複数マニュアルがある場合**: **`operation_manual.pdf` を上書きしない**よう、`node build-pdf.mjs <入力.md> <出力.pdf>` を使うか、`package.json` に `pdf:<名前>` / `build:<名前>` を **入出力ファイルが明示される形**で追加する（例: `node build-pdf.mjs TopicB.md TopicB.pdf`）。別件の Markdown 用に **専用の Mermaid ソースと PNG ファイル名**も分ける。
+3. 成果物の PDF パスをユーザーに返す。
 
 **注意**: `md-to-pdf` 等のみに依存すると Chromium のダウンロードに時間がかかることがある。**既存 Chrome + puppeteer-core**（テンプレート方式）をデフォルトとする。
 
