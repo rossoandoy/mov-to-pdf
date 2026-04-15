@@ -6,16 +6,99 @@
 
 ---
 
-## よくある質問：Claude や他の AI でも使える？
+## このリポジトリの位置づけ
 
-**はい、使えます。**
+| 要素 | 説明 |
+|------|------|
+| **Skill（[SKILL.md](SKILL.md)）** | AI や人間が従う **手順書**（Markdown）。フレーム抽出から PDF までの段階（Step A〜E）と品質上の注意が書かれている。ベンダー専用の実行ファイルは含まない。 |
+| **テンプレート（[templates/](templates/)）** | 実プロジェクトの作業フォルダに **コピーして使う** ビルド用ファイル群。`build-pdf.mjs`・`package.json`・Mermaid ひな型など。 |
+| **リファレンス（[reference.md](reference.md)）** | ffmpeg / npm のコマンド早見とチェックリスト。 |
 
-このリポジトリの中心は **人間と AI の両方が読める Markdown（[SKILL.md](SKILL.md)）** です。Cursor 専用のバイナリや API は含みません。したがって **Claude（Claude Code / Desktop / API）**、**ChatGPT**、**Gemini**、**GitHub Copilot** など、**テキスト手順をコンテキストとして渡せるツール**であれば、同じワークフローを再現できます。
+「Skill」は各 AI 製品の **Skills ディレクトリに置けるドキュメント**としても、**単なるプロジェクト内 Markdown** としても利用できる。製品ごとに frontmatter（YAML）の書式だけ合わせればよい。
 
-| できること | できないこと（ツール側の制約） |
-|------------|-------------------------------|
-| SKILL.md を貼り付け・@参照して「この手順で録画からマニュアルを作って」と依頼する | ブラウザ版のみで **端末が使えない** 場合は、ffmpeg / npm は**ユーザーがローカルで実行**する必要がある |
-| プロジェクトのルールファイル（`CLAUDE.md`、`AGENTS.md` 等）に要約を書いておく | 各社の「Skill」YAML形式は**その製品のドキュメントに合わせて**コピー先を変える |
+---
+
+## 前提条件
+
+### 実行環境（必須）
+
+次が **ローカルマシン（または CI ランナー）上**で利用可能であること。ブラウザ版チャットのみでは ffmpeg / npm を実行できない場合がある。
+
+| 要件 | 内容 |
+|------|------|
+| **OS** | macOS / Windows / Linux（パス区切り・Chrome の場所は OS 依存） |
+| **ffmpeg** | 動画から静止画フレームを抽出する。`ffprobe` が無くても `ffmpeg -i` で長さ・ストリーム確認は可能。 |
+| **Node.js** | **LTS 推奨**。`npm` で依存パッケージを入れる。 |
+| **Chrome または Chromium** | PDF は **ヘッドレス Chrome** で HTML を印刷する方式（`puppeteer-core`）。既定パスに無い場合は **`CHROME_PATH`** で実行ファイルを指定。 |
+| **シェル** | 動画パスにスペースが含まれる場合は **クォート**が必要。 |
+
+### 入力・成果物の前提
+
+- **入力:** 画面録画ファイル（mov / mp4 等）。長時間はフレーム間隔を広げてトークンと枚数を抑える（[SKILL.md](SKILL.md) Step A 参照）。
+- **成果物の置き場:** `manual/` など **一つの作業ディレクトリ**に、Markdown・`images/`・`diagrams/`・PDF をまとめる想定。
+- **AI の利用:** 必須ではない。人間が [SKILL.md](SKILL.md) に従って手作業でもよい。AI を使う場合は **画像の内容把握・本文草案・Mermaid 草案**に向く。
+
+---
+
+## 技術要素（スタック）
+
+| 区分 | 技術 | 役割 |
+|------|------|------|
+| 動画処理 | **ffmpeg** | 可変フレームレートで JPG 等へ書き出し、解像度を `scale` で抑制。 |
+| マークダウン | **marked** | `build-pdf.mjs` が `.md` を **HTML 断片**に変換。 |
+| PDF 生成 | **puppeteer-core** + **Chrome** | 一時 HTML を開き **`page.pdf()`** で A4 PDF 出力（埋め込み画像は相対パスで解決）。 |
+| 図 | **@mermaid-js/mermaid-cli**（`mmdc`） | Mermaid ソースを **PNG にレンダリング**（多くの PDF パイプラインでは Mermaid のコードブロックだけでは図にならないため）。 |
+
+依存バージョンは [templates/package.json](templates/package.json) を参照。
+
+---
+
+## アーキテクチャ
+
+データの流れは **「録画 → ラスタ画像 → テキスト・構成（Markdown）→ 図（PNG）→ 印刷用 HTML → PDF」** である。LLM は **Step B（画像の意味整理）と Step C（文書化）**に挟まれる任意層として置ける。
+
+```mermaid
+flowchart LR
+  subgraph ingest["取り込み"]
+    V[動画 mov/mp4]
+    F[ffmpeg]
+    J[フレーム画像 frames/]
+    V --> F --> J
+  end
+  subgraph content["文書・図"]
+    J --> B[画像の整理・手順化]
+    B --> MD[Markdown + images/]
+    MMD[diagrams/*.mmd] --> mmdc[mmdc]
+    mmdc --> PNG[images/*.png]
+    MD --> MD
+    PNG --> MD
+  end
+  subgraph pdfout["PDF"]
+    MD --> marked[marked]
+    marked --> HTML[一時 HTML]
+    HTML --> chrome[Chrome ヘッドレス]
+    chrome --> PDF[*.pdf]
+  end
+```
+
+- **単一パイプライン:** 既定では `operation_manual.md` → 一時 `_pdf_temp_*.html` → `operation_manual.pdf`（[templates/build-pdf.mjs](templates/build-pdf.mjs)）。
+- **複数マニュアル:** 入出力ファイル名を引数で変える、または `package.json` に用途別 `build:*` を定義して **別 PDF を並行管理**する（上書き方針は後述）。
+
+---
+
+## 処理内容（パイプライン概要）
+
+[SKILL.md](SKILL.md) の Step A〜E に対応する処理の要約である。
+
+| 段階 | 内容 |
+|------|------|
+| **Step A** | 一時ディレクトリにフレームを抽出（`fps` で間隔調整、必要なら解像度を下げる）。 |
+| **Step B** | フレームを **時系列**で読み、画面遷移・操作・エラー有無を整理する（人間またはマルチモーダル LLM）。 |
+| **Step C** | `operation_manual.md`（またはトピック別 `.md`）を執筆。各手順に `./images/` のキャプチャを埋め込む。 |
+| **Step D** | `diagrams/*.mmd` を `mmdc` で PNG 化し、本文から `![図](./images/....png)` で参照。 |
+| **Step E** | `build-pdf.mjs` が Markdown→HTML→PDF。複数トピック時は **入出力パスを分離**し、既存 PDF の誤上書きに注意（`MANUAL_PDF_STRICT_OVERWRITE`・`--force` は [reference.md](reference.md)）。 |
+
+クリーンアップとして、解析用 **`frames/`** は作業後に削除してよい（リポジトリにコミットしない運用が一般的）。
 
 ---
 
@@ -23,11 +106,9 @@
 
 | パス | 役割 |
 |------|------|
-| [SKILL.md](SKILL.md) | **メイン手順書**。ffmpeg 抽出 → 画像解析 → Markdown 執筆 → Mermaid を PNG 化 → PDF 出力までのステップ。 |
+| [SKILL.md](SKILL.md) | **メイン手順書**（Step A〜E の詳細・品質チェック・PDF 上書き時の注意）。 |
 | [reference.md](reference.md) | コマンド早見・チェックリスト。 |
-| [templates/](templates/) | 実際の作業フォルダへコピーする **`build-pdf.mjs`**・**`package.json`**・フロー図のひな型。 |
-
-**用語の整理:** 「Skill」とは、AI に「こういう順序で作業して」と伝えるための **指示ドキュメント**のことです。製品によって `SKILL.md` の置き場所や frontmatter（YAML）の書き方が違うだけで、**中身の手順は共通**です。
+| [templates/](templates/) | 作業フォルダへコピーする **`build-pdf.mjs`**・**`package.json`**・フロー図のひな型。 |
 
 ---
 
@@ -47,10 +128,10 @@
 ### 2. Claude Code / Claude Desktop
 
 1. リポジトリを clone するか、`SKILL.md` をプロジェクトにコピーする（例: `docs/skills/mov-to-pdf/SKILL.md`）。
-2. Claude Code の場合、Anthropic 公表の **プロジェクト設定（Skills / CLAUDE.md 等）** の手順に従い、**Skills** や **CLAUDE.md** に「録画マニュアル作成は `docs/skills/.../SKILL.md` に従う」と一文入れておくと毎回の説明が省けます。
-3. frontmatter（`---` で囲んだ YAML）は、Claude Code の Skill 形式に合わせて **名前や description だけ調整**してよい。手順本文はそのままで動きます。
+2. Anthropic 公表の **プロジェクト設定（Skills / CLAUDE.md 等）** に従い、**Skills** や **CLAUDE.md** に「録画マニュアル作成は `docs/skills/.../SKILL.md` に従う」と一文入れておくと毎回の説明が省けます。
+3. frontmatter（YAML）は、Claude Code の Skill 形式に合わせて **名前や description だけ調整**してよい。
 
-**活用のコツ:** 長い `SKILL.md` を毎回読ませるより、プロジェクト用に **「Step A〜E の一行要約」** を `CLAUDE.md` に書いておき、詳細はファイル参照にするとトークンを節約できます。
+**活用のコツ:** 長い `SKILL.md` を毎回読ませるより、**「Step A〜E の一行要約」** を `CLAUDE.md` に書き、詳細はファイル参照にするとトークンを節約できます。
 
 ---
 
@@ -60,48 +141,45 @@
 2. **Custom instructions** または **プロンプト用メモ**に、[SKILL.md](SKILL.md) の「Step A〜E」の見出しと [reference.md](reference.md) の ffmpeg 例を貼る。
 3. Copilot Chat で「この手順で `manual/` の PDF を更新して」と依頼する。
 
-**活用のコツ:** Copilot はリポジトリ内ファイルを参照しやすいので、`SKILL.md` をリポジトリにコミットしておくと `@workspace` 参照がしやすくなります。
+**活用のコツ:** `SKILL.md` をリポジトリにコミットしておくと `@workspace` 参照がしやすくなります。
 
 ---
 
 ### 4. ChatGPT / Google Gemini（Web）
 
-1. [SKILL.md](SKILL.md) を開き、必要なセクション（Step A〜E）をコピーするか、ファイルをアップロードできるプランで **ファイルとして添付**する。
+1. [SKILL.md](SKILL.md) の必要なセクションをコピーするか、ファイルをアップロードできるプランで添付する。
 2. 「この手順に従い、抽出したフレームの説明から Markdown 案を書いて」と依頼する。
 
-**制約:** ブラウザ版だけでは **ffmpeg・npm を実行できない**ことが多いです。その場合の役割分担は次のとおりです。
-
-- **AI:** フレーム画像の説明、Markdown 本文、Mermaid ソースの草案。
-- **人間（または Cursor 等）:** ターミナルでの ffmpeg、`npm run build`、PDF の生成。
+**制約:** ブラウザ版だけでは **ffmpeg・npm を実行できない**ことが多い。**AI:** フレームの説明・Markdown・Mermaid 草案。**人間（または Cursor 等）:** ffmpeg、`npm run build`、PDF 生成。
 
 ---
 
-### 5. その他（Gemini CLI、ローカル LLM、自作スクリプト）
+### 5. その他（Gemini CLI、ローカル LLM 等）
 
-- **共通:** `SKILL.md` は **プレーンな Markdown** なので、どのクライアントからでも読み込めるようにしておける。
-- **ローカル LLM:** 手順の追従精度はモデルに依存するため、**Step を細かい単位で依頼**する（「まず Step A の ffmpeg コマンドだけ実行して」など）。
+- `SKILL.md` は **プレーンな Markdown** のため、クライアントを問わず参照可能。
+- ローカル LLM は **Step を細かい単位で依頼**すると追従しやすい。
 
 ---
 
 ## 活用ガイドライン（共通）
 
-1. **環境を先に揃える:** ffmpeg、Node.js（LTS 推奨）、Google Chrome がインストール済みか確認する（[必要な環境](#必要な環境)）。
+1. **環境を先に揃える:** 上記 [前提条件](#前提条件実行環境必須) を満たす。
 2. **作業ディレクトリを一箇所に決める:** 例として `manual/` に `templates/` を展開し、動画・画像・Markdown・PDF をまとめる。
-3. **複数トピックのマニュアルがある場合:** 入出力ファイル名を分ける（例: `TopicA.md` → `TopicA.pdf`）。既定の `operation_manual.pdf` だけを何度もビルドすると **上書き**されます。詳細は下記「PDF の上書き方針」。
-4. **機密情報:** 録画・キャプチャに個人情報が含まれる場合は、マスクやダミー値に差し替えるか、社内ルールに従う。
-5. **AI に任せる範囲:** 画像の内容推測や文章化は得意だが、**貴社固有の業務ルール**は人間が最終確認する。
+3. **複数トピックのマニュアル:** 入出力ファイル名を分ける（例: `TopicA.md` → `TopicA.pdf`）。既定の `operation_manual.pdf` を繰り返しビルドすると **上書き**される。詳細は下記「PDF の上書き方針」。
+4. **機密情報:** 録画・キャプチャに個人情報が含まれる場合はマスクやダミー値にするか、社内ルールに従う。
+5. **最終責任:** 画像の誤認や手順抜けは **人間がレビュー**し、貴社固有の業務ルールは文書化ルールに合わせる。
 
 ---
 
 ## PDF の上書き方針（重要）
 
-- **別トピックのマニュアル**では、`Manabie_退会.md` → `Manabie_退会.pdf` のように **ファイル名を分ける**。
-- **エージェント向け:** 既存の共有 PDF を上書きしそうなときは、**ユーザーに確認してから**実行してよい。
-- **テンプレートの `build-pdf.mjs`:** 既定では既存 PDF があると **警告してから上書き**。誤上書きを防ぎたいときは環境変数 **`MANUAL_PDF_STRICT_OVERWRITE=1`** で中止し、意図した上書きだけ **`--force`** を付ける。詳細は [SKILL.md](SKILL.md) Step E と [reference.md](reference.md)。
+- **別トピック**では `Manabie_退会.md` → `Manabie_退会.pdf` のように **ファイル名を分ける**。
+- **エージェント:** 既存の共有 PDF を上書きしそうなときは **ユーザーに確認してから**実行してよい。
+- **`build-pdf.mjs`:** 既定では既存 PDF があると **警告してから上書き**。厳格に止めたいときは **`MANUAL_PDF_STRICT_OVERWRITE=1`**、上書き時は **`--force`**。詳細は [SKILL.md](SKILL.md) Step E と [reference.md](reference.md)。
 
 ---
 
-## クイックスタート（手動でも AI でも）
+## クイックスタート
 
 1. 作業フォルダ（例: `manual/`）に **[templates/](templates/) の中身をコピー**する。
 2. `operation_manual.md` と `images/` を用意する（または AI に SKILL に従って作成させる）。
@@ -117,22 +195,6 @@ npm run build
 生成物の例: `images/process_flow.png`、`operation_manual.pdf`
 
 **複数マニュアル**は `node build-pdf.mjs 別件.md 別件.pdf` や `package.json` の用途別 `npm run build:xxx` で PDF 名を分ける。
-
----
-
-## できること（機能一覧）
-
-- 長い録画を ffmpeg でフレーム化し、時系列で画面を読み取って手順を書く
-- Markdown と `./images/` のキャプチャを PDF にまとめる
-- Mermaid は PDF で崩れやすいため、**CLI で PNG 化してから**埋め込む
-
----
-
-## 必要な環境
-
-- **ffmpeg**（録画から静止画を切り出す）
-- **Node.js** と **npm**（PDF 生成・Mermaid CLI）
-- **Google Chrome** または **Chromium**（`puppeteer-core` で印刷 PDF）。見つからない場合は **`CHROME_PATH`** に実行ファイルのフルパスを指定
 
 ---
 
