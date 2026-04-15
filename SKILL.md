@@ -6,10 +6,11 @@ description: >-
   order, writes Markdown (operation_manual.md) with embedded captures under
   ./images/, renders a process flow diagram from Mermaid to PNG for PDF
   compatibility, and prints operation_manual.pdf using Google Chrome via
-  puppeteer-core (see templates/). Use when the user asks for manuals from
-  screen recordings, operation videos, ffmpeg frame extraction, screenshot
-  manuals, operation_manual.pdf, 画面録画, 操作動画, マニュアル自動生成, or
-  スクショ付きマニュアル.
+  puppeteer-core (see templates/). Prefer separate Markdown/PDF filenames per
+  topic to avoid overwriting existing PDFs; confirm with the user before
+  overwriting shared outputs. Use when the user asks for manuals from screen
+  recordings, operation videos, ffmpeg frame extraction, screenshot manuals,
+  operation_manual.pdf, 画面録画, 操作動画, マニュアル自動生成, or スクショ付きマニュアル.
 ---
 
 # 動画からマニュアル PDF 生成（エージェント手順）
@@ -86,15 +87,23 @@ description: >-
 
 テンプレートは `templates/` を作業ディレクトリにコピーして使える。
 
-## Step E — PDF 出力
+## Step E — PDF 出力（既存 PDF の上書きに注意）
 
 1. 作業ディレクトリに `package.json`・`build-pdf.mjs` を置く（このスキルの `templates/` をコピー）。
 2. `npm install` のあと、用途に応じてビルドする。
    - **既定（1 本だけのマニュアル）**: `npm run build`（`diagram` → `pdf`）または `npm run pdf` のみ → `operation_manual.md` → **`operation_manual.pdf`**。
-   - **複数マニュアルがある場合**: **`operation_manual.pdf` を上書きしない**よう、`node build-pdf.mjs <入力.md> <出力.pdf>` を使うか、`package.json` に `pdf:<名前>` / `build:<名前>` を **入出力ファイルが明示される形**で追加する（例: `node build-pdf.mjs TopicB.md TopicB.pdf`）。別件の Markdown 用に **専用の Mermaid ソースと PNG ファイル名**も分ける。
-3. 成果物の PDF パスをユーザーに返す。
+   - **複数マニュアルがある場合（推奨）**: **`operation_manual.pdf` や他トピックの PDF を誤って上書きしない**よう、次のいずれかを徹底する。
+     - **入出力を分ける**: `node build-pdf.mjs <入力.md> <出力.pdf>` で **トピックごとに別名の PDF** を出す。
+     - **`package.json` に用途別スクリプト** を用意し、コマンドからファイル名が一目でわかるようにする（例: `npm run build:withdrawal` → `Manabie_退会.md` → `Manabie_退会.pdf`）。
+     - **Mermaid も** `diagrams/Topic_flow.mmd`・`images/Topic_flow.png` のように **トピック単位でファイルを分ける**。
+3. **エージェントの判断**: 既存の `*.pdf` を上書きしそうな操作の前に、**ユーザーへ一言確認してよい**（「`operation_manual.pdf` を再生成してよいですか？」「別名 `Topic.pdf` で出しますか？」など）。CI や厳格運用では、テンプレートの `build-pdf.mjs` が **`MANUAL_PDF_STRICT_OVERWRITE=1`** のとき既存 PDF があると中止し、**`--force`** でだけ上書きする動きになっている。
+4. 成果物の PDF パスをユーザーに返す。
 
 **注意**: `md-to-pdf` 等のみに依存すると Chromium のダウンロードに時間がかかることがある。**既存 Chrome + puppeteer-core**（テンプレート方式）をデフォルトとする。
+
+### 他の AI / エディタでも使えるか
+
+この `SKILL.md` は **Markdown の手順書**である。**Cursor の Agent Skill** として置けるほか、**Claude Code の Skill**、**自作のプロジェクトルール**、またはチャットに **ファイルを貼り付け／リポジトリを参照**させる形でも、内容に従って同じパイプラインを実行できる。必須は **ffmpeg・Node・Chrome が利用可能な環境**と、エージェントがシェルコマンドを実行できることである（ツール名は製品ごとに異なる）。
 
 ## クリーンアップ
 

@@ -56,6 +56,16 @@ npm run pdf
 # または図も再生成: npm run build
 ```
 
-複数マニュアルがある場合は **`operation_manual.pdf` を上書きしない**よう、`node build-pdf.mjs 別件.md 別件.pdf` のように **出力ファイル名を変える**（プロジェクトの `package.json` に用途別 `pdf:*` / `build:*` を足すのが安全）。
+### 上書きポリシー（エージェント・人間共通）
+
+- **別トピックのマニュアル**では、`node build-pdf.mjs 別件.md 別件.pdf` のように **出力 PDF 名を分ける**。プロジェクトの `package.json` に用途別 `pdf:*` / `build:*` を足すと安全。
+- **既定の `build-pdf.mjs`**: 出力先 PDF が既に存在する場合、**コンソールに警告**したうえで上書きする（同じマニュアルの再生成向け）。
+- **誤上書きを防ぎたいとき**（CI など）: 環境変数 `MANUAL_PDF_STRICT_OVERWRITE=1` を付けると、既存 PDF があると **中止**（終了コード 1）。上書きする場合は **`--force`** を付ける。
+
+```bash
+# 厳格モード: 既存の Topic.pdf があると失敗（上書きするときだけ --force）
+MANUAL_PDF_STRICT_OVERWRITE=1 node build-pdf.mjs Topic.md Topic.pdf
+MANUAL_PDF_STRICT_OVERWRITE=1 node build-pdf.mjs --force Topic.md Topic.pdf
+```
 
 Chrome が見つからない場合は環境変数 `CHROME_PATH` に実行ファイルのフルパスを設定する。

@@ -6,7 +6,12 @@
  *     → 既定: operation_manual.md → operation_manual.pdf
  *
  *   node build-pdf.mjs <入力.md> <出力.pdf>
- *     → 別マニュアル用。既存の operation_manual.pdf を上書きしない。
+ *     → 別マニュアル用（出力ファイル名を分ける）
+ *
+ * 上書きポリシー（既定は警告のみで上書き可）:
+ *   出力先 PDF が既に存在するとき、コンソールに警告を出してから上書きする。
+ *   誤上書きを止めたい場合: 環境変数 MANUAL_PDF_STRICT_OVERWRITE=1 を付けると、
+ *   既存ファイルがあるときは終了コード 1 で中止（上書きする場合は --force）。
  */
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
 import { basename, dirname, join } from "path";
@@ -17,7 +22,9 @@ import puppeteer from "puppeteer-core";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const manualDir = __dirname;
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const forceOverwrite = rawArgs.includes("--force");
+const args = rawArgs.filter((a) => a !== "--force");
 const mdFile = args[0] ?? "operation_manual.md";
 const pdfFile = args[1] ?? "operation_manual.pdf";
 
@@ -27,6 +34,20 @@ const pdfPath = join(manualDir, pdfFile);
 if (!existsSync(mdPath)) {
   console.error("入力 Markdown が見つかりません:", mdPath);
   process.exit(1);
+}
+
+const strictOverwrite =
+  process.env.MANUAL_PDF_STRICT_OVERWRITE === "1" ||
+  process.env.MANUAL_PDF_STRICT_OVERWRITE === "true";
+
+if (existsSync(pdfPath)) {
+  if (strictOverwrite && !forceOverwrite) {
+    console.error("出力先 PDF が既に存在します（MANUAL_PDF_STRICT_OVERWRITE=1 のため上書きしません）:", pdfPath);
+    console.error("別ファイル名で出力するか、上書きが意図どおりなら --force を付けて再実行してください。");
+    console.error("例: MANUAL_PDF_STRICT_OVERWRITE=1 node build-pdf.mjs --force");
+    process.exit(1);
+  }
+  console.warn("[mov-to-pdf] 既存の PDF を上書きします:", pdfPath);
 }
 
 const safeHtmlStem = basename(mdFile, ".md").replace(/[^a-zA-Z0-9._-]/g, "_") || "manual";
