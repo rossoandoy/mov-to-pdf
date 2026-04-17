@@ -10,7 +10,7 @@
 
 | 要素 | 説明 |
 |------|------|
-| **Skill（[SKILL.md](SKILL.md)）** | AI や人間が従う **手順書**（Markdown）。フレーム抽出から PDF までの段階（Step A〜E）と品質上の注意が書かれている。ベンダー専用の実行ファイルは含まない。 |
+| **Skill（[SKILL.md](SKILL.md)）** | AI や人間が従う **手順書**（Markdown）。フレーム抽出から PDF までの段階（Step A〜E）、**キャプチャ品質（Step A'）**、**PDF・キャプチャの品質チェック**が書かれている。ベンダー専用の実行ファイルは含まない。 |
 | **テンプレート（[templates/](templates/)）** | 実プロジェクトの作業フォルダに **コピーして使う** ビルド用ファイル群。`build-pdf.mjs`・`package.json`・Mermaid ひな型など。 |
 | **リファレンス（[reference.md](reference.md)）** | ffmpeg / npm のコマンド早見とチェックリスト。 |
 

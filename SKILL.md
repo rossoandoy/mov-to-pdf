@@ -6,11 +6,14 @@ description: >-
   order, writes Markdown (operation_manual.md) with embedded captures under
   ./images/, renders a process flow diagram from Mermaid to PNG for PDF
   compatibility, and prints operation_manual.pdf using Google Chrome via
-  puppeteer-core (see templates/). Prefer separate Markdown/PDF filenames per
+  puppeteer-core (see templates/). Enforces PDF/screenshot quality: no loading
+  spinners, skeletons, or blank mains in published captures; refine timestamps
+  with single-frame ffmpeg extraction. Prefer separate Markdown/PDF filenames per
   topic to avoid overwriting existing PDFs; confirm with the user before
   overwriting shared outputs. Use when the user asks for manuals from screen
   recordings, operation videos, ffmpeg frame extraction, screenshot manuals,
-  operation_manual.pdf, 画面録画, 操作動画, マニュアル自動生成, or スクショ付きマニュアル.
+  operation_manual.pdf, 画面録画, 操作動画, マニュアル自動生成, スクショ付きマニュアル,
+  PDF品質, 資料品質, キャプチャ品質, or マニュアル品質.
 ---
 
 # 動画からマニュアル PDF 生成（エージェント手順）
@@ -38,6 +41,24 @@ description: >-
    ```
 
 3. 抽出枚数が多い場合はバッチ（数枚〜十数枚単位）で画像を読み、トークンを抑える。
+
+### Step A' — キャプチャ品質（資料として採用する／しない）
+
+**PDF の説得力はキャプチャの状態に依存する。** 次の画面は **マニュアル本文・PDF に採用しない**（見つかったら別の秒位置で切り直す）。
+
+| 採用しない | 理由 |
+|------------|------|
+| **スピナー**（一覧・テーブル・モーダル内の「読み込み中」） | 操作結果が見えず、読者が正しい UI を判断できない |
+| **スケルトン**・**プレースホルダー**だけの一覧 | 同上 |
+| **メイン領域が真っ白**・極端に未描画 | 遷移途中のフレームの可能性が高い |
+| 手順が「入力完了・保存直前／直後」を示すのに、**保存が無効**・必須が空のまま | 文と画像が矛盾する |
+| **意図しない**のに **0 件**・**1-0 / 0** のページングだけでテーブルが空 | 読み込み失敗と区別がつかない |
+
+**採用する例**: データ行・フォーム値が表示済み、成功トースト・更新後の一覧、カレンダーグリッドが描画済み（コマが無くても可）、主要ボタンが有効で次操作が明確。
+
+**秒位置の詰め方**: まず `fps=1/N` の連番で **おおよその時刻** を把握し、問題のある枚は **`ffmpeg -ss <秒> -i "動画" -vframes 1 -vf "scale=1080:-2" -q:v 3 out.jpg`** で **1 枚だけ** 再抽出する（6 秒刻みなど粗い抽出だけに依存しない）。トーストやモーダル閉じは数秒単位でズレるため、前後数秒を試す。
+
+**マークダウン側**: 運用で品質ルールを固定したい場合、**前提条件** または **専用の短い見出し**（例: 「キャプチャの品質」）に、上記の禁止事項と再抽出方針を 3〜6 行で書いてよい（保守担当が同じ基準で差し替えられるようにする）。
 
 ## Step B — 画像解析
 
@@ -112,9 +133,20 @@ description: >-
 
 ## 品質チェック
 
+### 手順・図・本文の整合
+
 - 手順の飛躍がないか（**通知・ホーム・一覧画面・タブ切替** など、録画で一瞬のものが抜けていないか）  
 - 本文と **抽出画像の内容が矛盾しないか**  
 - 個人情報・社内番号がそのまま載る場合はマスクや一般化をユーザーに確認する  
+
+### PDF・キャプチャ（必須）
+
+- **Step A'** の「採用しない」状態のキャプチャが **1 枚も混ざっていないか**（スピナー・スケルトン・意図しない空白）  
+- 「保存前」「保存後」「一覧反映後」など、**手順が示す状態と画像が一致しているか**  
+- **授業カレンダー・一覧** など読み込みの遅い画面は、**左パネルとグリッドが揃ってから** のフレームを使っているか（スピナー付きの週表示は避ける）  
+- 成功を示す手順では、可能なら **トースト・更新済み一覧** など **結果が分かる 1 枚** を含める  
+
+**PDF 出力前**: 上記を満たしてから `npm run pdf` / `build:*` する。ユーザーが「資料品質」「PDF の品質担保」を求めたときは、**キャプチャ差し替えとマークダウン注記の両方**を検討する。
 
 ## 同梱テンプレート
 
