@@ -1,6 +1,6 @@
 # mov-to-pdf
 
-画面操作の録画（mov / mp4 など）から、**操作マニュアル（Markdown）**・**画面キャプチャ**・**処理フロー図（Mermaid → PNG）**・**PDF（Chrome + puppeteer-core）**までを一気通貫で扱うための **エージェント向け手順（Skill）とテンプレート**をまとめたリポジトリです。
+画面操作の録画（mov / mp4 など）から、**操作マニュアル（Markdown）**・**画面キャプチャ**・**処理フロー図（Mermaid → PNG）**を作り、**ユーザーが選んだ派生形式**（PDF / Word / HTML / EPUB / Confluence 等）へ出力するための **エージェント向け手順（Skill）とテンプレート**をまとめたリポジトリです。**正本は常に Markdown + `images/`** で、PDF は派生の一つです。
 
 **公式リポジトリ:** [https://github.com/rossoandoy/mov-to-pdf](https://github.com/rossoandoy/mov-to-pdf)
 
@@ -10,9 +10,9 @@
 
 | 要素 | 説明 |
 |------|------|
-| **Skill（[SKILL.md](SKILL.md)）** | AI や人間が従う **手順書**（Markdown）。フレーム抽出から PDF までの段階（Step A〜E）、**キャプチャ品質（Step A'）**、**PDF・キャプチャの品質チェック**が書かれている。ベンダー専用の実行ファイルは含まない。 |
-| **テンプレート（[templates/](templates/)）** | 実プロジェクトの作業フォルダに **コピーして使う** ビルド用ファイル群。`build-pdf.mjs`・`package.json`・Mermaid ひな型など。 |
-| **リファレンス（[reference.md](reference.md)）** | ffmpeg / npm のコマンド早見とチェックリスト。 |
+| **Skill（[SKILL.md](SKILL.md)）** | AI や人間が従う **手順書**（Markdown）。Step A〜D（抽出〜本文〜図）、**Step E で派生出力をユーザーに確認**、Step F で **PDF（任意）**。**キャプチャ品質（Step A'）**と品質チェックあり。ベンダー専用の実行ファイルは含まない。 |
+| **テンプレート（[templates/](templates/)）** | 実プロジェクトの作業フォルダに **コピーして使う** ビルド用ファイル群。`build-pdf.mjs`・`package.json`・Mermaid ひな型など（**PDF 派生**用）。 |
+| **リファレンス（[reference.md](reference.md)）** | ffmpeg / Pandoc / 派生出力の一覧・Confluence チェックリスト・PDF コマンド早見。 |
 
 「Skill」は各 AI 製品の **Skills ディレクトリに置けるドキュメント**としても、**単なるプロジェクト内 Markdown** としても利用できる。製品ごとに frontmatter（YAML）の書式だけ合わせればよい。
 
@@ -29,13 +29,14 @@
 | **OS** | macOS / Windows / Linux（パス区切り・Chrome の場所は OS 依存） |
 | **ffmpeg** | 動画から静止画フレームを抽出する。`ffprobe` が無くても `ffmpeg -i` で長さ・ストリーム確認は可能。 |
 | **Node.js** | **LTS 推奨**。`npm` で依存パッケージを入れる。 |
-| **Chrome または Chromium** | PDF は **ヘッドレス Chrome** で HTML を印刷する方式（`puppeteer-core`）。既定パスに無い場合は **`CHROME_PATH`** で実行ファイルを指定。 |
+| **Chrome または Chromium** | **PDF 派生**に使う場合。**ヘッドレス Chrome** で HTML を印刷（`puppeteer-core`）。既定パスに無い場合は **`CHROME_PATH`** で指定。 |
+| **Pandoc**（任意） | DOCX / HTML / EPUB / 簡易 PPTX など。**派生形式**をコマンド一発で出すとき。 |
 | **シェル** | 動画パスにスペースが含まれる場合は **クォート**が必要。 |
 
 ### 入力・成果物の前提
 
 - **入力:** 画面録画ファイル（mov / mp4 等）。長時間はフレーム間隔を広げてトークンと枚数を抑える（[SKILL.md](SKILL.md) Step A 参照）。
-- **成果物の置き場:** `manual/` など **一つの作業ディレクトリ**に、Markdown・`images/`・`diagrams/`・PDF をまとめる想定。
+- **成果物の置き場:** `manual/` など **一つの作業ディレクトリ**に、Markdown・`images/`・`diagrams/`・（必要なら）PDF や DOCX など派生ファイルをまとめる想定。
 - **AI の利用:** 必須ではない。人間が [SKILL.md](SKILL.md) に従って手作業でもよい。AI を使う場合は **画像の内容把握・本文草案・Mermaid 草案**に向く。
 
 ---
@@ -48,6 +49,8 @@
 | マークダウン | **marked** | `build-pdf.mjs` が `.md` を **HTML 断片**に変換。 |
 | PDF 生成 | **puppeteer-core** + **Chrome** | 一時 HTML を開き **`page.pdf()`** で A4 PDF 出力（埋め込み画像は相対パスで解決）。 |
 | 図 | **@mermaid-js/mermaid-cli**（`mmdc`） | Mermaid ソースを **PNG にレンダリング**（多くの PDF パイプラインでは Mermaid のコードブロックだけでは図にならないため）。 |
+| 派生（任意） | **Pandoc** | Markdown から **DOCX / HTML / EPUB** 等（環境にインストールが必要）。 |
+| Wiki（任意） | **Atlassian MCP** 等 | **Confluence** へのページ作成・添付は MCP のツール定義に従う。 |
 
 依存バージョンは [templates/package.json](templates/package.json) を参照。
 
@@ -55,48 +58,52 @@
 
 ## アーキテクチャ
 
-データの流れは **「録画 → ラスタ画像 → テキスト・構成（Markdown）→ 図（PNG）→ 印刷用 HTML → PDF」** である。LLM は **Step B（画像の意味整理）と Step C（文書化）**に挟まれる任意層として置ける。
+データの流れの中心は **「録画 → フレーム画像 → Markdown + images/（正本）→ 図 PNG」** である。その後 **ユーザーが選んだ派生** へ分岐する（PDF は代表的な一本）。
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph ingest["取り込み"]
     V[動画 mov/mp4]
     F[ffmpeg]
-    J[フレーム画像 frames/]
+    J[フレーム frames/]
     V --> F --> J
   end
-  subgraph content["文書・図"]
+  subgraph content["正本"]
     J --> B[画像の整理・手順化]
     B --> MD[Markdown + images/]
     MMD[diagrams/*.mmd] --> mmdc[mmdc]
     mmdc --> PNG[images/*.png]
-    MD --> MD
     PNG --> MD
   end
-  subgraph pdfout["PDF"]
-    MD --> marked[marked]
-    marked --> HTML[一時 HTML]
-    HTML --> chrome[Chrome ヘッドレス]
-    chrome --> PDF[*.pdf]
+  subgraph choice["派生出力 ユーザー選択"]
+    MD --> ask[出力形式の確認]
+  end
+  subgraph derivatives["派生の例"]
+    ask --> pdf[PDF Chrome]
+    ask --> pandoc[Pandoc DOCX HTML EPUB]
+    ask --> wiki[Confluence MCP]
+    ask --> marp[Marp 等]
   end
 ```
 
-- **単一パイプライン:** 既定では `operation_manual.md` → 一時 `_pdf_temp_*.html` → `operation_manual.pdf`（[templates/build-pdf.mjs](templates/build-pdf.mjs)）。
-- **複数マニュアル:** 入出力ファイル名を引数で変える、または `package.json` に用途別 `build:*` を定義して **別 PDF を並行管理**する（上書き方針は後述）。
+- **PDF パイプライン（オプション）:** `operation_manual.md` → 一時 HTML → `operation_manual.pdf`（[templates/build-pdf.mjs](templates/build-pdf.mjs)）。
+- **その他:** [reference.md](reference.md) の Pandoc 例・Confluence チェックリストを参照。
+- **複数マニュアル:** 入出力ファイル名を引数で変える、または `package.json` に用途別 `build:*` を定義する（上書き方針は後述）。
 
 ---
 
 ## 処理内容（パイプライン概要）
 
-[SKILL.md](SKILL.md) の Step A〜E に対応する処理の要約である。
+[SKILL.md](SKILL.md) の Step A〜F に対応する処理の要約である。
 
 | 段階 | 内容 |
 |------|------|
-| **Step A** | 一時ディレクトリにフレームを抽出（`fps` で間隔調整、必要なら解像度を下げる）。 |
+| **Step A / A'** | フレーム抽出と **キャプチャ品質**（スピナー等を採用しない）。 |
 | **Step B** | フレームを **時系列**で読み、画面遷移・操作・エラー有無を整理する（人間またはマルチモーダル LLM）。 |
 | **Step C** | `operation_manual.md`（またはトピック別 `.md`）を執筆。各手順に `./images/` のキャプチャを埋め込む。 |
 | **Step D** | `diagrams/*.mmd` を `mmdc` で PNG 化し、本文から `![図](./images/....png)` で参照。 |
-| **Step E** | `build-pdf.mjs` が Markdown→HTML→PDF。複数トピック時は **入出力パスを分離**し、既存 PDF の誤上書きに注意（`MANUAL_PDF_STRICT_OVERWRITE`・`--force` は [reference.md](reference.md)）。 |
+| **Step E** | **ユーザーに派生出力を確認**（PDF / DOCX / Confluence 等。複数可）。 |
+| **Step F** | **PDF が選ばれた場合** `build-pdf.mjs` が Markdown→HTML→PDF。他形式は Pandoc / MCP 等（[reference.md](reference.md)）。既存 PDF の誤上書きに注意。 |
 
 クリーンアップとして、解析用 **`frames/`** は作業後に削除してよい（リポジトリにコミットしない運用が一般的）。
 
@@ -106,8 +113,8 @@ flowchart LR
 
 | パス | 役割 |
 |------|------|
-| [SKILL.md](SKILL.md) | **メイン手順書**（Step A〜E の詳細・品質チェック・PDF 上書き時の注意）。 |
-| [reference.md](reference.md) | コマンド早見・チェックリスト。 |
+| [SKILL.md](SKILL.md) | **メイン手順書**（Step A〜F・派生選択・品質チェック・PDF 上書き時の注意）。 |
+| [reference.md](reference.md) | ffmpeg / Pandoc / 派生出力一覧・チェックリスト。 |
 | [templates/](templates/) | 作業フォルダへコピーする **`build-pdf.mjs`**・**`package.json`**・フロー図のひな型。 |
 
 ---
@@ -119,7 +126,7 @@ flowchart LR
 1. 本リポジトリを clone するか、[SKILL.md](SKILL.md) を取得する。
 2. Cursor の Agent Skills 用ディレクトリに配置する（例: `~/.cursor/skills/video-to-manual-pdf/SKILL.md`）。プロジェクト直下の `.cursor/rules` に要約を置く方法でもよい。
 3. 作業用フォルダ（例: `manual/`）に [templates/](templates/) をコピーし、`npm install` 済みにしておく。
-4. チャットで「`mov-to-pdf` の SKILL に従って、`○○.mov` からマニュアル PDF を作って」と依頼する。
+4. チャットで「`mov-to-pdf` の SKILL に従って、`○○.mov` からマニュアルを作り、**出力は Markdown と PDF**（例）」のように **派生形式**を指定して依頼する。
 
 **活用のコツ:** 動画パスと成果物の出力先（フォルダ）を最初のメッセージで明示すると迷いが減ります。
 

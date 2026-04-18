@@ -2,29 +2,29 @@
 name: video-to-manual-pdf
 description: >-
   Converts large system screen-recording videos (mov/mp4) into a user-facing
-  operation manual: extracts frames with ffmpeg, analyzes screenshots in time
-  order, writes Markdown (operation_manual.md) with embedded captures under
-  ./images/, renders a process flow diagram from Mermaid to PNG for PDF
-  compatibility, and prints operation_manual.pdf using Google Chrome via
-  puppeteer-core (see templates/). Enforces PDF/screenshot quality: no loading
-  spinners, skeletons, or blank mains in published captures; refine timestamps
-  with single-frame ffmpeg extraction. Prefer separate Markdown/PDF filenames per
-  topic to avoid overwriting existing PDFs; confirm with the user before
-  overwriting shared outputs. Use when the user asks for manuals from screen
-  recordings, operation videos, ffmpeg frame extraction, screenshot manuals,
-  operation_manual.pdf, 画面録画, 操作動画, マニュアル自動生成, スクショ付きマニュアル,
-  PDF品質, 資料品質, キャプチャ品質, or マニュアル品質.
+  operation manual: ffmpeg frames, time-ordered screenshot analysis, Markdown
+  with ./images/, Mermaid to PNG, then user-chosen outputs. Canonical source is
+  always Markdown + images; derivatives include PDF (Chrome + puppeteer-core),
+  DOCX/HTML/EPUB (Pandoc), slides (Marp / Pandoc), wiki (Confluence via MCP when
+  available), and more—see reference.md. Enforces capture quality (no spinners
+  or skeletons). After draft MD, asks the user which formats to produce; user
+  edits MD first, then regenerates derivatives. Triggers: screen recordings,
+  operation_manual.pdf, 画面録画, マニュアル自動生成, DOCX, Word, Confluence,
+  出力形式, 派生出力, PDF品質, キャプチャ品質.
 ---
 
-# 動画からマニュアル PDF 生成（エージェント手順）
+# 動画からマニュアル生成（エージェント手順）
 
-大容量の画面操作動画はそのままでは解析できない。**ffmpeg でフレーム抽出 → 画像を時系列で読む → Markdown 作成 → キャプチャを `./images/` に配置 → 処理ステップ図を PNG 化 → Chrome で PDF 出力**の順で進める。
+大容量の画面操作動画はそのままでは解析できない。**ffmpeg でフレーム抽出 → 画像を時系列で読む → Markdown 作成 → キャプチャを `./images/` に配置 → 処理ステップ図を PNG 化 →（ユーザーが選ぶ派生形式）**の順で進める。
+
+**正本（Source of truth）** は常に **`*.md` + `images/`（＋必要なら `diagrams/*.mmd`）** である。PDF・DOCX・Confluence などは **派生成果物**。ユーザーは **まず Markdown を微修正してから**、必要な形式だけ再生成する。
 
 ## 前提ツール
 
 - **ffmpeg**（`ffprobe` が無くても `ffmpeg -i "path/to/video"` でメタデータ取得可）
 - **Node.js** と **npm**（PDF・Mermaid PNG 用）
-- **PDF 出力**: ローカルの **Google Chrome**（または Chromium）。テンプレートの `build-pdf.mjs` 内 `chromeCandidates` に OS に合わせてパスを追加してよい。
+- **PDF 派生**に使う場合: ローカルの **Google Chrome**（または Chromium）。テンプレートの `build-pdf.mjs` 内 `chromeCandidates` に OS に合わせてパスを追加してよい。
+- **その他の派生**（任意）: **Pandoc**（DOCX / HTML / EPUB 等）、**Marp**（スライド）、**Atlassian MCP**（Confluence）など。環境に無い場合は [reference.md](reference.md) を参照し、ユーザーにインストールまたは手動手順を案内する。
 
 ## 作業ディレクトリと入力
 
@@ -44,7 +44,7 @@ description: >-
 
 ### Step A' — キャプチャ品質（資料として採用する／しない）
 
-**PDF の説得力はキャプチャの状態に依存する。** 次の画面は **マニュアル本文・PDF に採用しない**（見つかったら別の秒位置で切り直す）。
+**資料の説得力はキャプチャの状態に依存する。** 次の画面は **マニュアル本文・派生ファイルに採用しない**（見つかったら別の秒位置で切り直す）。
 
 | 採用しない | 理由 |
 |------------|------|
@@ -98,9 +98,9 @@ description: >-
 - **一覧→レコードの再接続**: ステータス管理のあと、**問合せ一覧**・**通知のリンク**・**検索** のいずれかで対象 **お問合せ** を再オープンし、**入会状況** から **Application（商談 Stage 管理）** を開く、までを **一続きの手順** に書く（ここが抜けると「変換したのに次が Kanban だけ」になりがち）。
 - **`diagrams/process_flow.mmd`**: 上記の **通知確認・ホーム・問合せステータス管理・対象お問合せを再オープン** を中間ノードとして含め、本文の番号順と整合させる。
 
-## Step D — 処理ステップ図（PDF 用に PNG）
+## Step D — 処理ステップ図（Mermaid → PNG）
 
-多くの PDF 変換では **Mermaid のコードブロックが図にならない**。次を推奨する。
+多くの PDF／印刷向け変換では **Mermaid のコードブロックが図にならない**。次を推奨する。
 
 1. フロー図のソースを `diagrams/process_flow.mmd` に保存する（Mermaid `flowchart` 等）。
 2. `@mermaid-js/mermaid-cli`（`mmdc`）で PNG を生成し、`images/process_flow.png` に出力する。
@@ -108,7 +108,34 @@ description: >-
 
 テンプレートは `templates/` を作業ディレクトリにコピーして使える。
 
-## Step E — PDF 出力（既存 PDF の上書きに注意）
+## Step E — 出力形式の確認（派生成果物の選択）
+
+**Step C・D まで完了した時点**（マニュアル初稿とフロー図の取り込みが揃ったら）、エージェントは **ユーザーに最終的に欲しい形式**を確認する。Cursor では **AskQuestion** 等で **複数選択可** とする。
+
+### よく選ばれる順（目安）
+
+1. **Markdown のみ** — Git 管理・エディタで継続編集。派生は不要。
+2. **PDF** — 配布・印刷（Step F）。
+3. **DOCX（Word）** — 校正・コメント。Pandoc（[reference.md](reference.md)）。
+4. **Confluence** — Atlassian MCP または REST。**ページ作成・画像添付**のツールスキーマを読んでから実行。**スペースキー・親ページ**はユーザー確認。
+
+### 派生出力の短縮表（詳細は reference.md）
+
+| カテゴリ | 例 | 手段の例 | 自動化の目安 |
+|----------|-----|----------|----------------|
+| 正本・編集 | Markdown | そのまま | 高 |
+| 印刷・固定レイアウト | PDF | Chrome + puppeteer（Step F）、または Pandoc | 高（テンプレート時） |
+| Office | DOCX、ODT | Pandoc | 高（Pandoc 導入時） |
+| スライド | PPTX、Marp | Pandoc（簡易）／Marp／Word 経由 | 低〜中（レイアウト期待は下げる） |
+| Web | 単一 HTML、静的サイト | Pandoc、MkDocs 等 | 中（SG は別プロジェクト） |
+| Wiki・クラウド | Confluence、Notion、Google ドキュメント、Teams | MCP、API、手動貼り付け | 低〜中 |
+| 電子書籍 | EPUB | Pandoc | 中 |
+
+**微修正の流れ**: ユーザーが **`.md` を編集** → 必要な派生だけ **再生成**（PDF 上書き前は既存の確認ルールに従う）。
+
+## Step F — PDF 出力（派生の一つ・既存 PDF の上書きに注意）
+
+PDF が **不要**ならこの Step をスキップする。
 
 1. 作業ディレクトリに `package.json`・`build-pdf.mjs` を置く（このスキルの `templates/` をコピー）。
 2. `npm install` のあと、用途に応じてビルドする。
@@ -124,7 +151,7 @@ description: >-
 
 ### 他の AI / エディタでも使えるか
 
-この `SKILL.md` は **Markdown の手順書**である。**Cursor の Agent Skill** として置けるほか、**Claude Code の Skill**、**自作のプロジェクトルール**、またはチャットに **ファイルを貼り付け／リポジトリを参照**させる形でも、内容に従って同じパイプラインを実行できる。必須は **ffmpeg・Node・Chrome が利用可能な環境**と、エージェントがシェルコマンドを実行できることである（ツール名は製品ごとに異なる）。
+この `SKILL.md` は **Markdown の手順書**である。**Cursor の Agent Skill** として置けるほか、**Claude Code の Skill**、**自作のプロジェクトルール**、またはチャットに **ファイルを貼り付け／リポジトリを参照**させる形でも、内容に従って同じパイプラインを実行できる。必須は **ffmpeg・Node**（PDF 派生時は **Chrome**）が利用可能な環境と、エージェントがシェルコマンドを実行できることである（ツール名は製品ごとに異なる）。
 
 ## クリーンアップ
 
@@ -139,12 +166,13 @@ description: >-
 - 本文と **抽出画像の内容が矛盾しないか**  
 - 個人情報・社内番号がそのまま載る場合はマスクや一般化をユーザーに確認する  
 
-### PDF・キャプチャ（必須）
+### キャプチャ・派生生成前（必須）
 
 - **Step A'** の「採用しない」状態のキャプチャが **1 枚も混ざっていないか**（スピナー・スケルトン・意図しない空白）  
 - 「保存前」「保存後」「一覧反映後」など、**手順が示す状態と画像が一致しているか**  
 - **授業カレンダー・一覧** など読み込みの遅い画面は、**左パネルとグリッドが揃ってから** のフレームを使っているか（スピナー付きの週表示は避ける）  
 - 成功を示す手順では、可能なら **トースト・更新済み一覧** など **結果が分かる 1 枚** を含める  
+- **派生（PDF 等）を出す直前に**、**Markdown が最新の編集内容を反映しているか** を確認する  
 
 **PDF 出力前**: 上記を満たしてから `npm run pdf` / `build:*` する。ユーザーが「資料品質」「PDF の品質担保」を求めたときは、**キャプチャ差し替えとマークダウン注記の両方**を検討する。
 
@@ -155,6 +183,6 @@ description: >-
 | [templates/package.json](templates/package.json) | `diagram` / `pdf` / `build` |
 | [templates/build-pdf.mjs](templates/build-pdf.mjs) | `operation_manual.md` → PDF |
 | [templates/diagrams/process_flow.mmd](templates/diagrams/process_flow.mmd) | フロー図のひな型 |
-| [reference.md](reference.md) | ffmpeg 例・チェックリスト |
+| [reference.md](reference.md) | ffmpeg 例・派生出力の詳細・チェックリスト |
 
 新規案件では `templates/` をプロジェクトの `manual/` にコピーし、動画・本文に合わせて編集する。
